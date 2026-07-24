@@ -7,10 +7,14 @@ proxy layer so it can scale.
 ## How it works
 
 - **`yt-dlp`** expands any URL (video / playlist / channel / bare ID) into video IDs.
-- **`youtube-transcript-api`** fetches each video's captions — manually-created
-  preferred, auto-generated as fallback.
-- **Proxies** (BYO generic or Webshare residential) + retry/backoff + an
-  on-disk cache keep you from getting IP-blocked.
+- **Two caption backends**, tried in order:
+  1. **yt-dlp** (default) — pulls captions via YouTube's player API with a real
+     browser TLS fingerprint (`curl_cffi` impersonation). Far more resistant to
+     IP blocks; works from a plain IP without a proxy.
+  2. **youtube-transcript-api** (fallback) — scrapes the `timedtext` endpoint;
+     used only when yt-dlp can't get a video.
+- **Anti-ban:** browser impersonation + optional proxies (BYO generic or
+  Webshare residential) + retry/backoff + an on-disk cache (never re-fetch).
 
 ## CLI
 

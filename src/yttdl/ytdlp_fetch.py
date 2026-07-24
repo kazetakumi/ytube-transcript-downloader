@@ -20,6 +20,7 @@ from typing import Optional, Sequence
 
 from yt_dlp import YoutubeDL
 
+from ._ytdlp import impersonate_target
 from .transcript import TranscriptUnavailable, snippets_to_text
 
 
@@ -80,6 +81,8 @@ class YtdlpBackend:
             "no_warnings": True,
             "ignoreerrors": True,
         }
+        if (target := impersonate_target()) is not None:
+            opts["impersonate"] = target
         if self.proxy:
             opts["proxy"] = self.proxy
         try:

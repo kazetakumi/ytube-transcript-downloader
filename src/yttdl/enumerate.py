@@ -12,6 +12,8 @@ from typing import Iterable, Optional
 
 from yt_dlp import YoutubeDL
 
+from ._ytdlp import impersonate_target
+
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 
 
@@ -62,6 +64,8 @@ def expand_sources(
         # enumerate fully.
         "noplaylist": True,
     }
+    if (target := impersonate_target()) is not None:
+        opts["impersonate"] = target
     if proxy:
         opts["proxy"] = proxy
 
