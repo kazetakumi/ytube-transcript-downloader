@@ -1,0 +1,27 @@
+"""yttdl — download YouTube captions as plain text, in batch.
+
+Library entry points:
+    from yttdl import fetch_transcript, download_transcripts, ProxySettings
+"""
+
+from .cache import TranscriptCache
+from .cli import main
+from .core import Result, download_transcripts, fetch_transcript
+from .proxies import ProxySettings
+from .transcript import (
+    TranscriptBlocked,
+    TranscriptFetcher,
+    TranscriptUnavailable,
+)
+
+__all__ = [
+    "fetch_transcript",
+    "download_transcripts",
+    "Result",
+    "ProxySettings",
+    "TranscriptFetcher",
+    "TranscriptCache",
+    "TranscriptUnavailable",
+    "TranscriptBlocked",
+    "main",
+]

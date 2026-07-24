@@ -1,0 +1,20 @@
+[project]
+name = "yttdl"
+version = "0.1.0"
+description = "Download YouTube captions as plain text, in batch, with proxy anti-ban support."
+readme = "README.md"
+authors = [
+    { name = "kaze", email = "kazetakumi.dev" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "youtube-transcript-api>=1.2.4",
+    "yt-dlp>=2026.7.4",
+]
+
+[project.scripts]
+yttdl = "yttdl:main"
+
+[build-system]
+requires = ["uv_build>=0.11.26,<0.12.0"]
+build-backend = "uv_build"
