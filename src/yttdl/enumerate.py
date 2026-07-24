@@ -27,7 +27,9 @@ def _ids_from_info(info: dict) -> list[str]:
     """Flatten a yt-dlp info dict into video IDs.
 
     A channel comes back as playlists-of-videos, so entries can nest one level;
-    we walk both. ``extract_flat`` means each leaf entry is a video stub.
+    we walk both. ``extract_flat`` means each leaf entry is a video stub. Only
+    real 11-char video IDs are kept — playlist/channel stubs are dropped so they
+    never leak through as bogus "videos".
     """
     if not info:
         return []
@@ -38,7 +40,7 @@ def _ids_from_info(info: dict) -> list[str]:
                 ids.extend(_ids_from_info(entry))
         return ids
     vid = info.get("id")
-    return [vid] if vid else []
+    return [vid] if vid and _VIDEO_ID_RE.match(vid) else []
 
 
 def expand_sources(
@@ -55,6 +57,10 @@ def expand_sources(
         "extract_flat": True,
         "skip_download": True,
         "ignoreerrors": True,
+        # A /watch?v=X&list=Y URL means "this video" — take X, not the playlist.
+        # Bare /playlist and /channel URLs have no video to pick, so they still
+        # enumerate fully.
+        "noplaylist": True,
     }
     if proxy:
         opts["proxy"] = proxy
