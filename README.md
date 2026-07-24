@@ -78,6 +78,22 @@ YouTube blocks datacenter IPs aggressively. Configure a proxy via env or code:
 Webshare takes precedence when both are set. Without a proxy it works fine for
 light/personal use — proxies matter once you fetch at volume.
 
+### Free proxy pool (`--proxy-pool`)
+
+Rotate through a free public proxy list ([proxifly](https://github.com/proxifly/free-proxy-list))
+and switch proxy on each IP block:
+
+```bash
+uv run yttdl <url> --proxy-pool
+uv run yttdl <url> --proxy-pool-url https://example.com/my-list.json   # custom source
+```
+
+**Best-effort only.** Free proxies are mostly datacenter IPs that YouTube
+blocks, and they die constantly — expect most to fail; the pool tries up to
+`max_attempts` (12) per video, elite/high-score first. Good as a free fallback,
+but **residential proxies (Webshare) are the reliable path** for real volume.
+In code: `download_transcripts(..., proxy_pool=ProxyPool())`.
+
 ## Scope & the commercial path
 
 This is the **core**, built to be wrapped later. Deliberately *not* included yet

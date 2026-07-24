@@ -14,6 +14,7 @@ from .core import (
     write_report,
 )
 from .proxies import ProxySettings
+from .proxy_pool import ProxyPool
 from .transcript import (
     TranscriptBlocked,
     TranscriptFetcher,
@@ -27,6 +28,7 @@ __all__ = [
     "write_report",
     "Result",
     "ProxySettings",
+    "ProxyPool",
     "TranscriptFetcher",
     "TranscriptCache",
     "TranscriptUnavailable",

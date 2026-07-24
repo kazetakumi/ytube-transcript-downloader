@@ -16,6 +16,7 @@ from .core import (
     write_report,
 )
 from .proxies import ProxySettings
+from .proxy_pool import DEFAULT_SOURCES, ProxyPool
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -50,6 +51,17 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--cache", metavar="DIR", help="cache directory (skips re-fetching)")
     parser.add_argument("--proxy", metavar="URL", help="generic HTTP/SOCKS proxy URL (else read from env)")
+    parser.add_argument(
+        "--proxy-pool",
+        action="store_true",
+        help="rotate through a free proxy pool (proxifly) on IP blocks — best-effort",
+    )
+    parser.add_argument(
+        "--proxy-pool-url",
+        metavar="URL",
+        action="append",
+        help="proxy-list JSON source for --proxy-pool (repeatable; default: proxifly)",
+    )
     parser.add_argument("--retries", type=int, default=3, help="retries when blocked (default: 3)")
     parser.add_argument("--backoff", type=float, default=2.0, help="backoff base seconds (default: 2.0)")
     parser.add_argument(
@@ -77,6 +89,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         proxy.http_url = args.proxy
         proxy.https_url = args.proxy
 
+    proxy_pool = None
+    if args.proxy_pool or args.proxy_pool_url:
+        proxy_pool = ProxyPool(args.proxy_pool_url or list(DEFAULT_SOURCES))
+        if not args.quiet:
+            print(f"Loaded {len(proxy_pool)} proxies into the rotation pool.")
+
     def on_progress(result: Result) -> None:
         if args.quiet:
             return
@@ -94,6 +112,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         fallback_any=args.fallback_any,
         translate_to=args.translate,
         proxy=proxy,
+        proxy_pool=proxy_pool,
         cache_dir=args.cache,
         max_retries=args.retries,
         backoff=args.backoff,

@@ -2,13 +2,14 @@
 
 Two backends fetch captions by different routes:
 
-- **yt-dlp** (default) pulls captions through YouTube's player API, which is far
-  more resistant to IP blocks — it works from a plain IP without a proxy.
+- **yt-dlp** (default) pulls captions through YouTube's player API with a real
+  browser TLS fingerprint — far more resistant to IP blocks; works from a plain
+  IP without a proxy.
 - **youtube-transcript-api** scrapes the ``timedtext`` endpoint; kept as a
   fallback for the rare video yt-dlp can't get.
 
 ``TranscriptFetcher`` is the coordinator: it owns the cache and tries the
-backends in order, so callers just call ``fetch_text``.
+backends in order. A ``ProxyPool`` can be supplied to rotate proxies on blocks.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 import time
 from typing import Optional, Sequence
 
+import requests
 from youtube_transcript_api import (
     CouldNotRetrieveTranscript,
     NoTranscriptFound,
@@ -28,10 +30,12 @@ from youtube_transcript_api import (
 
 from .cache import TranscriptCache
 from .proxies import ProxySettings
+from .proxy_pool import ProxyPool
 
 # Ban / transient signals worth retrying (IpBlocked subclasses RequestBlocked).
 # Everything else under CouldNotRetrieveTranscript means "no transcript" — skip.
 _RETRYABLE = (RequestBlocked, YouTubeRequestFailed)
+_POOL_TIMEOUT = 15  # seconds — so dead pool proxies fail fast
 
 
 class TranscriptUnavailable(Exception):
@@ -47,6 +51,18 @@ def snippets_to_text(segments: Sequence[dict]) -> str:
     return "\n".join(line for seg in segments if (line := seg["text"].strip()))
 
 
+class _TimedSession(requests.Session):
+    """Session that applies a default timeout so dead proxies don't hang."""
+
+    def __init__(self, timeout: float):
+        super().__init__()
+        self._timeout = timeout
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", self._timeout)
+        return super().request(*args, **kwargs)
+
+
 class ApiBackend:
     """Fetch captions via youtube-transcript-api (timedtext scraping)."""
 
@@ -54,31 +70,38 @@ class ApiBackend:
         self,
         *,
         proxy: Optional[ProxySettings] = None,
+        proxy_pool: Optional[ProxyPool] = None,
         languages: Sequence[str] = ("en",),
         fallback_any: bool = False,
         translate_to: Optional[str] = None,
         max_retries: int = 3,
         backoff: float = 2.0,
     ):
-        proxy_config = proxy.to_proxy_config() if proxy else None
-        self._api = YouTubeTranscriptApi(proxy_config=proxy_config)
+        self.pool = proxy_pool
         self.languages = tuple(languages)
         self.fallback_any = fallback_any
         self.translate_to = translate_to
         self.max_retries = max_retries
         self.backoff = backoff
+        # Fixed client only when not rotating a pool.
+        self._api = (
+            None
+            if proxy_pool is not None
+            else YouTubeTranscriptApi(
+                proxy_config=proxy.to_proxy_config() if proxy else None
+            )
+        )
 
     def fetch(self, video_id: str) -> str:
+        if self.pool is not None:
+            return snippets_to_text(self._fetch_via_pool(video_id))
         return snippets_to_text(self._fetch_with_retry(video_id))
 
     def _fetch_with_retry(self, video_id: str) -> list[dict]:
         attempt = 0
         while True:
             try:
-                transcript = self._select(self._api.list(video_id))
-                if self.translate_to and transcript.language_code != self.translate_to:
-                    transcript = self._maybe_translate(transcript)
-                return transcript.fetch().to_raw_data()
+                return self._extract(self._api, video_id)
             except _RETRYABLE as exc:
                 attempt += 1
                 if attempt > self.max_retries:
@@ -86,6 +109,35 @@ class ApiBackend:
                 time.sleep(self.backoff**attempt)
             except CouldNotRetrieveTranscript as exc:
                 raise TranscriptUnavailable(str(exc)) from exc
+
+    def _fetch_via_pool(self, video_id: str) -> list[dict]:
+        attempts = min(len(self.pool), self.pool.max_attempts) or 1
+        last: Optional[Exception] = None
+        for _ in range(attempts):
+            try:
+                return self._extract(self._client_for(self.pool.next()), video_id)
+            except _RETRYABLE as exc:
+                last = TranscriptBlocked(str(exc))  # blocked proxy — rotate
+            except CouldNotRetrieveTranscript as exc:
+                # Genuine "no transcript" fails on every proxy — stop early.
+                raise TranscriptUnavailable(str(exc)) from exc
+            except Exception as exc:  # dead proxy / connection error — rotate
+                last = exc
+        raise last or TranscriptBlocked(f"proxy pool exhausted for {video_id}")
+
+    @staticmethod
+    def _client_for(proxy_url: Optional[str]) -> YouTubeTranscriptApi:
+        if proxy_url is None:
+            return YouTubeTranscriptApi()
+        session = _TimedSession(_POOL_TIMEOUT)
+        session.proxies = {"http": proxy_url, "https": proxy_url}
+        return YouTubeTranscriptApi(http_client=session)
+
+    def _extract(self, api: YouTubeTranscriptApi, video_id: str) -> list[dict]:
+        transcript = self._select(api.list(video_id))
+        if self.translate_to and transcript.language_code != self.translate_to:
+            transcript = self._maybe_translate(transcript)
+        return transcript.fetch().to_raw_data()
 
     def _select(self, transcript_list):
         try:
@@ -110,6 +162,7 @@ class TranscriptFetcher:
         self,
         *,
         proxy: Optional[ProxySettings] = None,
+        proxy_pool: Optional[ProxyPool] = None,
         cache: Optional[TranscriptCache] = None,
         languages: Sequence[str] = ("en",),
         fallback_any: bool = False,
@@ -122,18 +175,22 @@ class TranscriptFetcher:
         self._key = translate_to or languages[0]
         self._backends = [
             self._build_backend(
-                name, proxy, languages, fallback_any, translate_to, max_retries, backoff
+                name, proxy, proxy_pool, languages,
+                fallback_any, translate_to, max_retries, backoff,
             )
             for name in backends
         ]
 
     @staticmethod
-    def _build_backend(name, proxy, languages, fallback_any, translate_to, max_retries, backoff):
+    def _build_backend(
+        name, proxy, proxy_pool, languages, fallback_any, translate_to, max_retries, backoff
+    ):
         if name == "ytdlp":
             from .ytdlp_fetch import YtdlpBackend  # local import: heavy module
 
             return YtdlpBackend(
                 proxy=proxy.to_ytdlp_proxy() if proxy else None,
+                proxy_pool=proxy_pool,
                 languages=languages,
                 fallback_any=fallback_any,
                 translate_to=translate_to,
@@ -141,6 +198,7 @@ class TranscriptFetcher:
         if name == "api":
             return ApiBackend(
                 proxy=proxy,
+                proxy_pool=proxy_pool,
                 languages=languages,
                 fallback_any=fallback_any,
                 translate_to=translate_to,

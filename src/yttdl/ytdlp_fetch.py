@@ -21,7 +21,10 @@ from typing import Optional, Sequence
 from yt_dlp import YoutubeDL
 
 from ._ytdlp import impersonate_target
+from .proxy_pool import ProxyPool
 from .transcript import TranscriptUnavailable, snippets_to_text
+
+_SOCKET_TIMEOUT = 15  # seconds — so dead pool proxies fail fast
 
 
 def _json3_to_text(path: str) -> str:
@@ -38,23 +41,38 @@ class YtdlpBackend:
         self,
         *,
         proxy: Optional[str] = None,
+        proxy_pool: Optional[ProxyPool] = None,
         languages: Sequence[str] = ("en",),
         fallback_any: bool = False,
         translate_to: Optional[str] = None,
     ):
         self.proxy = proxy
+        self.pool = proxy_pool
         self.languages = tuple(languages)
         self.fallback_any = fallback_any
         self.translate_to = translate_to
 
     def fetch(self, video_id: str) -> str:
+        if self.pool is None:
+            return self._fetch_once(video_id, self.proxy)
+
+        # Rotate through the pool until one proxy yields captions.
+        attempts = min(len(self.pool), self.pool.max_attempts) or 1
+        for _ in range(attempts):
+            try:
+                return self._fetch_once(video_id, self.pool.next())
+            except TranscriptUnavailable:
+                continue  # dead / blocked proxy — try the next one
+        raise TranscriptUnavailable(f"proxy pool exhausted for {video_id}")
+
+    def _fetch_once(self, video_id: str, proxy: Optional[str]) -> str:
         # When translating, the desired output track *is* the target language —
         # YouTube auto-translates, so we just ask for it directly.
         desired = [self.translate_to] if self.translate_to else list(self.languages)
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         with tempfile.TemporaryDirectory() as tmp:
-            info = self._download_subs(url, tmp, desired)
+            info = self._download_subs(url, tmp, desired, proxy)
             text = self._read_first(tmp, video_id, desired)
             if text is not None:
                 return text
@@ -62,14 +80,16 @@ class YtdlpBackend:
             if self.fallback_any or self.translate_to:
                 fallback = self._fallback_lang(info)
                 if fallback:
-                    self._download_subs(url, tmp, [fallback])
+                    self._download_subs(url, tmp, [fallback], proxy)
                     text = self._read_first(tmp, video_id, [fallback])
                     if text is not None:
                         return text
 
         raise TranscriptUnavailable(f"no captions available for {video_id}")
 
-    def _download_subs(self, url: str, tmp: str, langs: Sequence[str]) -> dict:
+    def _download_subs(
+        self, url: str, tmp: str, langs: Sequence[str], proxy: Optional[str]
+    ) -> dict:
         opts = {
             "skip_download": True,
             "writesubtitles": True,
@@ -80,17 +100,18 @@ class YtdlpBackend:
             "quiet": True,
             "no_warnings": True,
             "ignoreerrors": True,
+            "socket_timeout": _SOCKET_TIMEOUT,
         }
         if (target := impersonate_target()) is not None:
             opts["impersonate"] = target
-        if self.proxy:
-            opts["proxy"] = self.proxy
+        if proxy:
+            opts["proxy"] = proxy
         try:
             with YoutubeDL(opts) as ydl:
                 return ydl.extract_info(url, download=True) or {}
         except Exception:
-            # yt-dlp couldn't retrieve it; let the caller fall through to
-            # fallback / the next backend rather than crashing the batch.
+            # yt-dlp couldn't retrieve it (dead proxy, block, network); let the
+            # caller fall through to fallback / pool rotation / next backend.
             return {}
 
     @staticmethod

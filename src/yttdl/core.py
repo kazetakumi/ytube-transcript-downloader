@@ -18,6 +18,7 @@ from typing import Callable, Optional, Sequence, Union
 from .cache import TranscriptCache
 from .enumerate import expand_sources
 from .proxies import ProxySettings
+from .proxy_pool import ProxyPool
 from .transcript import (
     TranscriptBlocked,
     TranscriptFetcher,
@@ -54,6 +55,7 @@ def read_sources_file(path: Union[str, Path]) -> list[str]:
 
 def _make_fetcher(
     proxy: Optional[ProxySettings],
+    proxy_pool: Optional[ProxyPool],
     cache_dir: Optional[Union[str, Path]],
     languages: Sequence[str],
     fallback_any: bool,
@@ -65,6 +67,7 @@ def _make_fetcher(
     cache = TranscriptCache(cache_dir) if cache_dir else None
     fetcher = TranscriptFetcher(
         proxy=proxy,
+        proxy_pool=proxy_pool,
         cache=cache,
         languages=languages,
         fallback_any=fallback_any,
@@ -82,6 +85,7 @@ def fetch_transcript(
     fallback_any: bool = False,
     translate_to: Optional[str] = None,
     proxy: Optional[ProxySettings] = None,
+    proxy_pool: Optional[ProxyPool] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     max_retries: int = 3,
     backoff: float = 2.0,
@@ -91,7 +95,8 @@ def fetch_transcript(
     ``source`` may be a video URL or a bare video ID. Raises on failure.
     """
     fetcher, proxy = _make_fetcher(
-        proxy, cache_dir, languages, fallback_any, translate_to, max_retries, backoff
+        proxy, proxy_pool, cache_dir, languages, fallback_any, translate_to,
+        max_retries, backoff,
     )
     ids = expand_sources([source], proxy=proxy.to_ytdlp_proxy())
     if not ids:
@@ -107,6 +112,7 @@ def download_transcripts(
     fallback_any: bool = False,
     translate_to: Optional[str] = None,
     proxy: Optional[ProxySettings] = None,
+    proxy_pool: Optional[ProxyPool] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     max_retries: int = 3,
     backoff: float = 2.0,
@@ -122,7 +128,8 @@ def download_transcripts(
     batch. Pass ``on_progress`` to observe each result as it completes.
     """
     fetcher, proxy = _make_fetcher(
-        proxy, cache_dir, languages, fallback_any, translate_to, max_retries, backoff
+        proxy, proxy_pool, cache_dir, languages, fallback_any, translate_to,
+        max_retries, backoff,
     )
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
