@@ -25,6 +25,18 @@ One `<video_id>.txt` is written per video. Videos are fetched **one at a time**
 to stay gentle on YouTube and avoid IP blocks. Videos with captions disabled are
 skipped and reported; the batch never aborts on a single failure.
 
+**Non-English videos:** `-l` is a priority list, tried in order (`-l es,en`).
+By default, if none of your languages exist for a video it's reported as failed
+(a Spanish-spoken video's auto-captions are tagged `es`, not `en`). Two opt-in
+flags handle foreign videos:
+
+- `--fallback-any` — if none of `-l` match, save whatever transcript the video
+  has, in its original language.
+- `--translate LANG` — machine-translate (via YouTube) to `LANG` when the chosen
+  transcript isn't already in it; implies `--fallback-any`. E.g.
+  `yttdl <url> --translate en` gets English out of almost any captioned video.
+  If translation to `LANG` isn't offered, the original language is kept.
+
 **Batch options:**
 
 - `-f, --from-file PATH` — read sources from a file, one URL/ID per line

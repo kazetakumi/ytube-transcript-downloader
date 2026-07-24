@@ -38,6 +38,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default="en",
         help="comma-separated language codes in priority order (default: en)",
     )
+    parser.add_argument(
+        "--fallback-any",
+        action="store_true",
+        help="if none of --lang are available, use any transcript the video has",
+    )
+    parser.add_argument(
+        "--translate",
+        metavar="LANG",
+        help="translate the transcript to LANG when it isn't already (implies --fallback-any)",
+    )
     parser.add_argument("--cache", metavar="DIR", help="cache directory (skips re-fetching)")
     parser.add_argument("--proxy", metavar="URL", help="generic HTTP/SOCKS proxy URL (else read from env)")
     parser.add_argument("--retries", type=int, default=3, help="retries when blocked (default: 3)")
@@ -81,6 +91,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sources,
         out_dir=args.out,
         languages=tuple(args.lang.split(",")),
+        fallback_any=args.fallback_any,
+        translate_to=args.translate,
         proxy=proxy,
         cache_dir=args.cache,
         max_retries=args.retries,

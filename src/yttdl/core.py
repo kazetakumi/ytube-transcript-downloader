@@ -56,6 +56,8 @@ def _make_fetcher(
     proxy: Optional[ProxySettings],
     cache_dir: Optional[Union[str, Path]],
     languages: Sequence[str],
+    fallback_any: bool,
+    translate_to: Optional[str],
     max_retries: int,
     backoff: float,
 ) -> tuple[TranscriptFetcher, ProxySettings]:
@@ -65,6 +67,8 @@ def _make_fetcher(
         proxy=proxy,
         cache=cache,
         languages=languages,
+        fallback_any=fallback_any,
+        translate_to=translate_to,
         max_retries=max_retries,
         backoff=backoff,
     )
@@ -75,6 +79,8 @@ def fetch_transcript(
     source: str,
     *,
     languages: Sequence[str] = ("en",),
+    fallback_any: bool = False,
+    translate_to: Optional[str] = None,
     proxy: Optional[ProxySettings] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     max_retries: int = 3,
@@ -85,7 +91,7 @@ def fetch_transcript(
     ``source`` may be a video URL or a bare video ID. Raises on failure.
     """
     fetcher, proxy = _make_fetcher(
-        proxy, cache_dir, languages, max_retries, backoff
+        proxy, cache_dir, languages, fallback_any, translate_to, max_retries, backoff
     )
     ids = expand_sources([source], proxy=proxy.to_ytdlp_proxy())
     if not ids:
@@ -98,6 +104,8 @@ def download_transcripts(
     *,
     out_dir: Union[str, Path] = "transcripts",
     languages: Sequence[str] = ("en",),
+    fallback_any: bool = False,
+    translate_to: Optional[str] = None,
     proxy: Optional[ProxySettings] = None,
     cache_dir: Optional[Union[str, Path]] = None,
     max_retries: int = 3,
@@ -114,7 +122,7 @@ def download_transcripts(
     batch. Pass ``on_progress`` to observe each result as it completes.
     """
     fetcher, proxy = _make_fetcher(
-        proxy, cache_dir, languages, max_retries, backoff
+        proxy, cache_dir, languages, fallback_any, translate_to, max_retries, backoff
     )
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
