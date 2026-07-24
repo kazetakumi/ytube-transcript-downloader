@@ -18,10 +18,21 @@ proxy layer so it can scale.
 uv run yttdl "https://www.youtube.com/watch?v=VIDEO_ID"
 uv run yttdl "https://www.youtube.com/playlist?list=..." -o transcripts --cache .cache
 uv run yttdl VIDEO_ID_1 VIDEO_ID_2 -l en,de          # language priority
+uv run yttdl -f urls.txt --report run.json           # batch from a file + manifest
 ```
 
-One `<video_id>.txt` is written per video. Videos with captions disabled are
+One `<video_id>.txt` is written per video. Videos are fetched **one at a time**
+to stay gentle on YouTube and avoid IP blocks. Videos with captions disabled are
 skipped and reported; the batch never aborts on a single failure.
+
+**Batch options:**
+
+- `-f, --from-file PATH` — read sources from a file, one URL/ID per line
+  (`#` comments and blank lines ignored). Combine with positional sources.
+- **Resume for free** — already-downloaded videos are skipped on re-run; pass
+  `--overwrite` to force a re-fetch.
+- `--report PATH` — write a JSON manifest (counts + per-video status/errors),
+  so failures in a large run are inspectable afterward.
 
 ## Library
 
